@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+.env*
+
+.jspace/
+.playwright-mcp/
+.ruff_cache/
+/*.jpeg
+.wrangler/
+.DS_Store
