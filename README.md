@@ -7,9 +7,14 @@ Persian.
 
 [Try the no-key demo](#try-it-locally).
 
+<details>
+<summary>Watch the English demo and see the Persian interface</summary>
+
 ![English demo showing triage, chart updates, investigation results, and the scored debrief](demo-en.gif)
 
 ![Persian interview with a right-to-left patient chart and localized vital signs](demo-fa.png)
+
+</details>
 
 ## Try it locally
 
@@ -114,4 +119,4 @@ within that case. The app is for education only.
 
 ## License
 
-[MIT](LICENSE) — Hesam Sadeghi
+[MIT](LICENSE) — Hesamation
