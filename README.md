@@ -1,12 +1,36 @@
 # SimuMed
 
-**SimuMed** is a clinical-interview simulator for medical students: an
-LLM-driven virtual patient in an emergency-department triage scenario. You
-play the doctor — take a focused history from a dyspneic patient, examine him,
-order investigations, and make the management call, then get a scored review
-of your interview.
+**SimuMed** is a bilingual emergency-department simulator for medical students.
+Interview and examine a virtual patient, order investigations, and review your
+decisions in a scored debrief. The same fictional case runs in English and
+Persian.
 
-> **Draft note:** wording pending final review before the repo goes public.
+[Try the no-key demo](#try-it-locally).
+
+![English demo showing triage, chart updates, investigation results, and the scored debrief](demo-en.gif)
+
+![Persian interview with a right-to-left patient chart and localized vital signs](demo-fa.png)
+
+## Try it locally
+
+With Node.js 22, run these commands from the repository root.
+
+```bash
+cd app
+npm ci
+SIMUMED_MOCK_LLM=1 npm run dev
+```
+
+Open [localhost:3000](http://localhost:3000), choose English or Persian, and
+select **Start**. The demo uses built-in patient replies and illustrative
+scores. It needs no password or API key.
+
+## Project context
+
+I built SimuMed to give medical students a repeatable way to practice an
+emergency-department encounter. My work covered the interview and chart UI,
+the case progression and debrief, and the English and Persian versions of
+the workflow. This repository contains the single-case portfolio version.
 
 ## What it does
 
@@ -15,14 +39,14 @@ handover, history taking, examination, investigations, and the management
 decision. An LLM plays the patient, the triage nurse, and the senior resident,
 under a strict JSON contract (`app/lib/simumed/llm-contract.ts`) that maps what
 you say to in-scenario effects (starting oxygen, ordering labs/ECG/CXR,
-prescribing, ICU escalation). A scored review at the end grades the interview:
+prescribing, ICU escalation). A scored review at the end covers
 error counts by severity, domain scores, clinical-readiness (CRS) components,
 performance under pressure, communication, and resilience feedback.
 
 The teaching case — a fictional 68-year-old retired welder with a COPD
 exacerbation and community-acquired pneumonia — is deterministic teaching
-content: every symptom, exam finding, and lab value is fixed and clinically
-grounded. The case spec lives in `app/lib/simumed/CASE.md` (Persian) and
+content with fixed symptoms, exam findings, and lab values.
+The case spec lives in `app/lib/simumed/CASE.md` (Persian) and
 `app/lib/simumed/copd-case.ts` / `copd-case-en.ts`.
 
 ## Features
@@ -31,9 +55,9 @@ grounded. The case spec lives in `app/lib/simumed/CASE.md` (Persian) and
   the LLM layer (patient, nurse, resident, hints, review) follow the active
   locale. One-click switcher, no reload, preference persisted, full RTL/LTR
   layout with Persian digits in `fa` and Latin digits in `en`.
-- **Contract-checked LLM brain.** Replies are validated against a strict JSON
-  contract; invalid output falls back to deterministic in-character responses,
-  so the session never crashes on a model slip.
+- **Structured model replies.** The app validates reply roles, dialogue, and
+  directives before applying orders to the case. Unusable replies get a
+  fallback message.
 - **Scored review.** Critical/major/minor error classification, domain bars,
   CRS components, stress/diagnostic/communication scores, resilience notes, and
   a printable formal report.
@@ -49,52 +73,44 @@ grounded. The case spec lives in `app/lib/simumed/CASE.md` (Persian) and
 - No database: session state lives in the browser; auth is a shared-password
   gate with a signed cookie and login rate limiting.
 
-## Run locally
-
-```bash
-cd app
-npm install
-npm run dev
-```
-
-Open http://localhost:3000 and sign in with the app password.
-
-### Environment variables
+## Environment variables
 
 Create `app/.env.local` (never committed):
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `SIMUMED_APP_PASSWORD` | yes in production | Shared password for the login gate. If unset, the gate fails open (development only). |
-| `SIMUMED_LLM_API_KEY` | for the live patient | API key for the OpenAI-compatible provider. Without it, the UI runs on deterministic fallback replies. |
+| `SIMUMED_APP_PASSWORD` | for live-provider mode | Shared password for the login gate. An explicit no-key demo can run without it. |
+| `SIMUMED_MOCK_LLM` | for the no-key demo | Set to `1` to enable built-in replies and sample scoring. Leave the provider key unset. |
+| `SIMUMED_LLM_API_KEY` | for live-provider mode | API key for the OpenAI-compatible provider. Set the app password as well. |
 | `SIMUMED_LLM_PRESET` | no | `avalai` (default), `openai`, or `gemini`. |
 | `SIMUMED_LLM_BASE_URL` | no | Overrides the preset base URL. |
 | `SIMUMED_LLM_MODEL` | no | Overrides the preset model. |
 
-Keys are read from the environment only; no secret is stored in the repo.
+For local checks, run `npm run lint`, `npm test`, and `npm run build` from
+`app`.
 
 ## Deployment
 
-No deployments are currently maintained. The app builds to a standalone Node
-server (`output: "standalone"`), so it runs anywhere Node does:
+No deployments are currently maintained. To build and start the standalone
+server locally in demo mode, run these commands from the repository root.
 
 ```bash
 cd app
+npm ci
 npm run build
-node .next/standalone/app/server.js
+cp -r public .next/standalone/
+cp -r .next/static .next/standalone/.next/
+SIMUMED_MOCK_LLM=1 HOSTNAME=127.0.0.1 node .next/standalone/server.js
 ```
 
-Nothing ships automatically — there is no CI deploy.
+For a public portfolio demo, set `SIMUMED_MOCK_LLM=1` in the hosting environment
+and leave `SIMUMED_LLM_API_KEY` unset. For live-provider use, set both the key and
+the app password in the server's runtime environment and serve over HTTPS.
 
 ## Status
 
-Single teaching case, single-purpose app, feature-frozen polish state. The
-case content is fictional; nothing here is medical advice or a real clinical
-record.
-
-## Demo
-
-![SimuMed demo](demo-en.gif)
+The repository contains one fictional teaching case. Scores are for practice
+within that case. The app is for education only.
 
 ## License
 

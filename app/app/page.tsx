@@ -1064,16 +1064,20 @@ export default function Home() {
       setMessages((m) => [...m, ...turn]);
       if (sessionRef.current.icuOrdered && !reviewing) {
         setReviewing(true);
-        void runReview();
+        void runReview(
+          [...messages, { role: "student", text: input }, ...turn],
+          j.coveredIds ?? coveredIds,
+          sessionRef.current,
+        );
       }
     } catch {
       setMessages((m) => [...m, fallback]);
     }
   }
 
-  async function runReview() {
+  async function runReview(reviewMessages: Message[], reviewCoveredIds: string[], state: SessionState) {
     try {
-      const transcript = messages
+      const transcript = reviewMessages
         .map((m) => `${m.role}: ${m.text}`)
         .join("\n");
       const res = await fetch("/api/evaluate", {
@@ -1081,8 +1085,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           transcript,
-          coveredIds: coveredIds,
-          state: sessionRef.current,
+          coveredIds: reviewCoveredIds,
+          state,
           locale,
         }),
         signal: AbortSignal.timeout(40_000),
@@ -1234,7 +1238,7 @@ export default function Home() {
 
   function send() {
     const text = draft.trim();
-    if (!text || typing) return;
+    if (!started || !text || typing) return;
     setMessages((m) => [...m, { role: "student", text }]);
     setDraft("");
     pushReply(text);
@@ -1323,7 +1327,7 @@ export default function Home() {
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="flex items-center gap-2 border-b bg-card px-3 py-2 sm:gap-3 sm:px-4 sm:py-3">
+      <header className="flex flex-wrap items-center gap-2 border-b bg-card px-3 py-2 sm:flex-nowrap sm:gap-3 sm:px-4 sm:py-3">
         <Button
           variant="outline"
           size="lg"
@@ -1334,7 +1338,7 @@ export default function Home() {
           {t.app.chartButton}
         </Button>
 
-        <div className="min-w-0">
+        <div className="min-w-0 max-sm:flex-1">
           <h1 className="font-heading text-base leading-snug font-medium">
             {t.app.title}
           </h1>
@@ -1347,8 +1351,8 @@ export default function Home() {
           {t.app.erBadge}
         </Badge>
 
-        <div className="flex items-center gap-1 max-sm:ms-auto md:ms-2">
-          <LocaleSwitcher className="max-sm:hidden" />
+        <div className="flex items-center gap-1 max-sm:w-full md:ms-2">
+          <LocaleSwitcher className="max-sm:me-auto" />
           <Button
             variant="ghost"
             size="icon-lg"
@@ -1375,7 +1379,7 @@ export default function Home() {
       <main className="mx-auto flex w-full max-w-6xl min-h-0 flex-1 gap-4 px-3 py-3 sm:px-4 sm:py-4">
         <aside
           className={cn(
-            "w-72 shrink-0 flex-col gap-4 overflow-y-auto",
+            "w-72 shrink-0 flex-col gap-4 overflow-y-auto [&>[data-slot=card]]:shrink-0",
             railOpen ? "hidden md:flex" : "hidden",
           )}
         >
@@ -1478,6 +1482,7 @@ export default function Home() {
               <Lightbulb className="size-5" />
             </Button>
             <Textarea
+              disabled={!started}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -1490,7 +1495,7 @@ export default function Home() {
               className="min-h-11 flex-1"
               rows={1}
             />
-            <Button size="lg" className="h-11" onClick={send} disabled={!draft.trim() || typing}>
+            <Button size="lg" className="h-11" onClick={send} disabled={!started || !draft.trim() || typing}>
               {t.chat.send}
             </Button>
           </div>

@@ -27,6 +27,21 @@ test("parseLLMOutput: extracts JSON embedded in chatter", () => {
   assert.equal(out.text, "I can't catch my breath");
 });
 
+test("parseLLMOutput: rejects malformed directives before they affect session state", () => {
+  const reply = { role: "nurse", text: "Order received." };
+  for (const directives of [
+    { oxygen_started: "false" },
+    { icu_ordered: 1 },
+    { facts_covered: "labs-panel" },
+    { facts_covered: [42] },
+    [],
+  ]) {
+    assert.equal(parseLLMOutput(JSON.stringify({ ...reply, directives })), null);
+  }
+  const directives = { oxygen_started: false, facts_covered: ["labs-panel"] };
+  assert.deepEqual(parseLLMOutput(JSON.stringify({ ...reply, directives }))?.directives, directives);
+});
+
 test("parseLLMOutput: kind defaults to reply unless interjection", () => {
   const out = parseLLMOutput('{"role":"resident","text":"x","kind":"interjection","directives":{}}');
   assert.equal(out?.kind, "interjection");

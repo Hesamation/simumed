@@ -28,6 +28,19 @@ export interface LLMOutput {
 export type LlmRole = LLMOutput["role"];
 
 const VALID_ROLES: ReadonlySet<string> = new Set(["patient", "nurse", "resident"]);
+const BOOLEAN_DIRECTIVES = new Set([
+  "oxygen_started", "labs_requested", "ecg_done", "cxr_done", "dx_ordered", "icu_ordered",
+]);
+
+function isDirectives(value: unknown): value is LLMOutput["directives"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.entries(value).every(([key, entry]) => {
+    if (key === "facts_covered") {
+      return Array.isArray(entry) && entry.every((id) => typeof id === "string");
+    }
+    return BOOLEAN_DIRECTIVES.has(key) && typeof entry === "boolean";
+  });
+}
 
 /** Contract check for a raw LLM completion: extract the JSON object and
  *  validate the required fields. Returns null on any violation — callers
@@ -41,7 +54,8 @@ export function parseLLMOutput(raw: string): LLMOutput | null {
     const role = typeof obj.role === "string" ? obj.role : "patient";
     if (!VALID_ROLES.has(role)) return null;
     if (typeof obj.text !== "string" || !obj.text.trim()) return null;
-    const directives = (obj.directives ?? {}) as LLMOutput["directives"];
+    const directives: unknown = obj.directives ?? {};
+    if (!isDirectives(directives)) return null;
     return {
       role: role as LlmRole,
       kind: (obj.kind as string) === "interjection" ? "interjection" : "reply",

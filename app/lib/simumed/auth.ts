@@ -1,4 +1,6 @@
 import type { NextRequest } from "next/server";
+import { llmConfig } from "./llm";
+import { mockEnabled } from "./mock-brain";
 
 export const COOKIE_NAME = "simumed_auth";
 const TOKEN_SALT = "simumed-auth-v1";
@@ -38,7 +40,9 @@ function constantTimeEqual(a: string, b: string): boolean {
 
 export async function isAuthed(request: NextRequest): Promise<boolean> {
   const password = process.env.SIMUMED_APP_PASSWORD?.trim();
-  if (!password) return true; // fail-open only when no password configured (dev)
+  if (!password) {
+    return !llmConfig() && (process.env.NODE_ENV !== "production" || mockEnabled());
+  }
   const got = request.cookies.get(COOKIE_NAME)?.value;
   if (!got) return false;
   const expected = await expectedToken(password);

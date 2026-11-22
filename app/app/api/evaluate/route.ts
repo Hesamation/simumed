@@ -1,3 +1,5 @@
+import type { NextRequest } from "next/server";
+import { isAuthed } from "@/lib/simumed/auth";
 import { pickLocale } from "@/lib/i18n/config";
 import { dictFor } from "@/lib/i18n/dict";
 import { complete, llmConfig } from "@/lib/simumed/llm";
@@ -120,7 +122,10 @@ function parseEvalOutput(raw: string): Record<string, unknown> | null {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  if (!(await isAuthed(request))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   let body: EvalBody = {};
   try {
     body = (await request.json()) as EvalBody;

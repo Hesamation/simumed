@@ -5,6 +5,8 @@ import {
   systemPrompt,
   type HistoryTurn,
 } from "@/lib/simumed/llm-contract";
+import type { NextRequest } from "next/server";
+import { isAuthed } from "@/lib/simumed/auth";
 import { pickLocale } from "@/lib/i18n/config";
 import { dictFor } from "@/lib/i18n/dict";
 import { complete, llmConfig } from "@/lib/simumed/llm";
@@ -72,7 +74,10 @@ function dodge(state: SessionState, turnCount: number, locale: "en" | "fa", cove
   });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (!(await isAuthed(request))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const cfg = llmConfig();
   const mock = mockEnabled();
   return Response.json({
@@ -81,7 +86,10 @@ export async function GET() {
   });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  if (!(await isAuthed(request))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
   const cfg = llmConfig();
 
   let body: DecideBody = {};
@@ -233,39 +241,33 @@ export async function POST(request: Request) {
   return buildResponse(output, state, turnCount, locale, coveredIds);
 }
 
-function labsDelivery(state: SessionState, locale: "en" | "fa"): {
-  state: SessionState;
-  turns: TurnMsg[];
-} {
+function labsDelivery(state: SessionState, locale: "en" | "fa"): TurnMsg[] {
   const t = dictFor(locale);
   const labsScene = computeScene(state);
-  return {
-    state,
-    turns: [
-      {
-        role: "nurse",
-        text: t.s.labsReady,
-        kind: "labs-ready",
-        hero: "nurse-labs",
-        scene: labsScene,
-      },
-      {
-        role: "system",
-        text: dictFor(locale).chart.labsTitle,
-        kind: "labs",
-        card: "labs",
-        factId: "labs-panel",
-        scene: labsScene,
-      },
-      {
-        role: "nurse",
-        text: t.s.abgLine,
-        kind: "abg",
-        hero: "nurse-labs",
-        scene: labsScene,
-      },
-    ],
-  };
+  return [
+    {
+      role: "nurse",
+      text: t.s.labsReady,
+      kind: "labs-ready",
+      hero: "nurse-labs",
+      scene: labsScene,
+    },
+    {
+      role: "system",
+      text: t.chart.labsTitle,
+      kind: "labs",
+      card: "labs",
+      factId: "labs-panel",
+      scene: labsScene,
+    },
+    {
+      role: "nurse",
+      text: t.s.abgLine,
+      kind: "abg",
+      hero: "nurse-labs",
+      scene: labsScene,
+    },
+  ];
 }
 
 function buildResponse(
@@ -277,6 +279,10 @@ function buildResponse(
 ): Response {
   const t = dictFor(locale);
   const newState = advance(state, output.directives, output.directives.facts_covered);
+  const deliverLabs = !state.labsDelivered && (
+    newState.labsDelivered || (newState.ecgDone && newState.cxrDone)
+  );
+  if (deliverLabs) newState.labsDelivered = true;
   const newScene = computeScene(newState, turnCount + 1);
   // Facts elicited so far (documented in the chart, scored in the review).
   const newCoveredIds = mergeCoveredIds(coveredIds, output.directives.facts_covered);
@@ -289,12 +295,16 @@ function buildResponse(
   const turn: TurnMsg[] = [main];
   // Nurse's own speech already acknowledges orders; only synthesize the
   // action card, never a duplicate ack.
-  const needAck = output.role !== "nurse";
+  let acknowledged = output.role === "nurse";
+  function acknowledge(text: string) {
+    if (acknowledged) return;
+    turn.push({ role: "nurse", text, kind: "ack", scene: newScene });
+    acknowledged = true;
+  }
 
   // If LLM declares oxygen_started and we haven't already, add action card
   if (output.directives.oxygen_started && !state.o2Started) {
-    if (needAck)
-      turn.push({ role: "nurse", text: t.s.ack, kind: "ack", scene: newScene });
+    acknowledge(t.s.ack);
     turn.push({
       role: "system",
       text: t.s.oxygenStarted,
@@ -302,20 +312,16 @@ function buildResponse(
       card: "o2",
       scene: newScene,
     });
-    return Response.json({ turn, state: newState, coveredIds: newCoveredIds, hint: output.hint ?? null });
   }
 
   // If LLM declares labs_requested
   if (output.directives.labs_requested && !state.labsRequested) {
-    if (needAck)
-      turn.push({ role: "nurse", text: t.s.ackDoctor, kind: "ack", scene: newScene });
-    return Response.json({ turn, state: newState, coveredIds: newCoveredIds, hint: output.hint ?? null });
+    acknowledge(t.s.ackDoctor);
   }
 
   // If LLM declares ecg_done
   if (output.directives.ecg_done && !state.ecgDone) {
-    if (needAck)
-      turn.push({ role: "nurse", text: t.s.done, kind: "ack", scene: newScene });
+    acknowledge(t.s.done);
     turn.push({
       role: "system",
       text: t.s.ecgReceived,
@@ -323,18 +329,11 @@ function buildResponse(
       card: "ecg",
       scene: newScene,
     });
-    if (newState.ecgDone && newState.cxrDone && !newState.labsDelivered) {
-      const delivered = labsDelivery({ ...newState, labsDelivered: true }, locale);
-      turn.push(...delivered.turns);
-      return Response.json({ turn, state: delivered.state, coveredIds: newCoveredIds, hint: output.hint ?? null });
-    }
-    return Response.json({ turn, state: newState, coveredIds: newCoveredIds, hint: output.hint ?? null });
   }
 
   // If LLM declares cxr_done
   if (output.directives.cxr_done && !state.cxrDone) {
-    if (needAck)
-      turn.push({ role: "nurse", text: t.s.takingNow, kind: "ack", scene: newScene });
+    acknowledge(t.s.takingNow);
     turn.push({
       role: "system",
       text: t.s.cxrReceived,
@@ -342,18 +341,13 @@ function buildResponse(
       card: "cxr",
       scene: newScene,
     });
-    if (newState.ecgDone && newState.cxrDone && !newState.labsDelivered) {
-      const delivered = labsDelivery({ ...newState, labsDelivered: true }, locale);
-      turn.push(...delivered.turns);
-      return Response.json({ turn, state: delivered.state, coveredIds: newCoveredIds, hint: output.hint ?? null });
-    }
-    return Response.json({ turn, state: newState, coveredIds: newCoveredIds, hint: output.hint ?? null });
   }
+
+  if (deliverLabs) turn.push(...labsDelivery(newState, locale));
 
   // If LLM declares dx_ordered
   if (output.directives.dx_ordered && !state.dxOrdered) {
-    if (needAck)
-      turn.push({ role: "nurse", text: t.s.ackDoctor, kind: "ack", scene: newScene });
+    acknowledge(t.s.ackDoctor);
     turn.push(
       {
         role: "system",
@@ -388,13 +382,11 @@ function buildResponse(
         scene: newScene,
       },
     );
-    return Response.json({ turn, state: newState, coveredIds: newCoveredIds, hint: output.hint ?? null });
   }
 
   // If LLM declares icu_ordered
   if (output.directives.icu_ordered && !state.icuOrdered) {
-    if (needAck)
-      turn.push({ role: "nurse", text: t.s.ack, kind: "ack", scene: newScene });
+    acknowledge(t.s.ack);
     turn.push({
       role: "system",
       text: t.s.icuReady,
@@ -402,9 +394,7 @@ function buildResponse(
       card: "icu",
       scene: SCENES.review,
     });
-    return Response.json({ turn, state: newState, coveredIds: newCoveredIds, hint: output.hint ?? null });
   }
 
-  // Default: just the LLM's reply
   return Response.json({ turn, state: newState, coveredIds: newCoveredIds, hint: output.hint ?? null });
 }
